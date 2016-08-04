@@ -44,13 +44,16 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &coreid);
     MPI_Comm_size(MPI_COMM_WORLD, &ncores);
     
-    int workForOne = C_EXPORT_IMAGE_HEIGHT / ncores;
-    
     // Work division
-    x_start = 0;
-    x_end   = C_EXPORT_IMAGE_WIDTH - 1;
-    y_start = workForOne * coreid;
-    y_end = y_start + workForOne -1;
+    int workWidth = C_EXPORT_IMAGE_WIDTH / 2;
+    int workHeight = C_EXPORT_IMAGE_HEIGHT / 2;
+    int workAreas[4][2] = {{0, 0}, {workWidth, 0}, {0, workHeight}, {workWidth, workHeight}};
+
+    int* currentWork = workAreas[coreid];
+    x_start = currentWork[0];
+    x_end   = x_start + workWidth - 1;
+    y_start = currentWork[1];
+    y_end = y_start + workHeight - 1;
 
     blackhole_lab = BLACKHOLE_LAB_create(
         C_EXPORT_IMAGE_WIDTH, x_start, x_end,
@@ -66,7 +69,7 @@ int main(int argc, char **argv)
 
     BLACKHOLE_LAB_start_experiment(blackhole_lab);
 
-    number_of_results = C_EXPORT_IMAGE_WIDTH * workForOne;
+    number_of_results = workWidth * workHeight;
 
     result = (RESULT*)calloc(number_of_results, sizeof(RESULT));
 
