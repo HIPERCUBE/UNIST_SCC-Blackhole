@@ -4,6 +4,9 @@
 #include <math.h>
 #include "blackhole_lab.h"
 
+// Include MPI Header
+#include "mpi.h"
+
 // Information for view
 #define C_VISUAL_ANGLE              120.
 
@@ -21,7 +24,7 @@
 // Information for job division
 #define C_NUMBER_OF_DIVISION        4
 
-//void gather_results(RESULT *result, int number_of_results, RESULT *collection);
+void gather_results(RESULT *result, int number_of_results, RESULT *collection);
 
 int main(int argc, char **argv)
 {
@@ -31,57 +34,62 @@ int main(int argc, char **argv)
     RESULT *collection = NULL;
     int x_start, x_end;
     int y_start, y_end;
-    int my_rank, num_procs;
     int i, j;
 
     collection = (RESULT*)calloc(C_EXPORT_IMAGE_TOTAL_PIXELS, sizeof(RESULT));
-
-    num_procs = C_NUMBER_OF_DIVISION;
-
+    
+    // MPI Initialize
+    MPI_Init(&argc, &argv);
+    int coreid, ncores;
+    MPI_Comm_rank(MPI_COMM_WORLD, &coreid);
+    MPI_Comm_size(MPI_COMM_WORLD, &ncores);
+    
+    int workForOne = C_EXPORT_IMAGE_HEIGHT / ncores;
+    
+    // Work division
     x_start = 0;
     x_end   = C_EXPORT_IMAGE_WIDTH - 1;
+    y_start = workForOne * coreid;
+    y_end = y_start + workForOne -1;
 
-    for (my_rank = 0, i = 0; my_rank < num_procs; my_rank++) {
-        y_start = (C_EXPORT_IMAGE_HEIGHT / num_procs) * my_rank;
-        y_end = (C_EXPORT_IMAGE_HEIGHT / num_procs) * (my_rank + 1) - 1;
+    blackhole_lab = BLACKHOLE_LAB_create(
+        C_EXPORT_IMAGE_WIDTH, x_start, x_end,
+        C_EXPORT_IMAGE_HEIGHT, y_start, y_end,
+        C_VISUAL_ANGLE, C_TIME_STEP, C_TIME_INTERVAL
+    );
 
-        blackhole_lab = BLACKHOLE_LAB_create(
-            C_EXPORT_IMAGE_WIDTH, x_start, x_end,
-            C_EXPORT_IMAGE_HEIGHT, y_start, y_end,
-            C_VISUAL_ANGLE, C_TIME_STEP, C_TIME_INTERVAL
-        );
-
-        if (NULL == blackhole_lab) {
-            BLACKHOLE_LAB_destroy(blackhole_lab);
-            fprintf(stderr, "Creating BLACKHOLE_LAB is Failed.\n");
-            return -1;
-        }
-
-        BLACKHOLE_LAB_start_experiment(blackhole_lab);
-
-        number_of_results = C_EXPORT_IMAGE_WIDTH * C_EXPORT_IMAGE_HEIGHT / num_procs;
-
-        result = (RESULT*)calloc(number_of_results, sizeof(RESULT));
-
-        BLACKHOLE_LAB_dump_results(blackhole_lab, result);
-
+    if (NULL == blackhole_lab) {
         BLACKHOLE_LAB_destroy(blackhole_lab);
-
-        for (j = 0; j < number_of_results; j++, i++) {
-            collection[i] = result[j];
-        }
-
-        free(result);
+        fprintf(stderr, "Creating BLACKHOLE_LAB is Failed.\n");
+        return -1;
     }
 
-    BLACKHOLE_LAB_make_vision(collection, C_IMPORT_IMAGE_FILENAME, C_EXPORT_IMAGE_FILENAME, C_EXPORT_IMAGE_WIDTH, C_EXPORT_IMAGE_HEIGHT);
+    BLACKHOLE_LAB_start_experiment(blackhole_lab);
+
+    number_of_results = C_EXPORT_IMAGE_WIDTH * workForOne;
+
+    result = (RESULT*)calloc(number_of_results, sizeof(RESULT));
+
+    BLACKHOLE_LAB_dump_results(blackhole_lab, result);
+
+    BLACKHOLE_LAB_destroy(blackhole_lab);
+
+    gather_results(result, number_of_results, collection);
+    
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    free(result);
+
+    if (coreid == 0) {
+        BLACKHOLE_LAB_make_vision(collection, C_IMPORT_IMAGE_FILENAME, C_EXPORT_IMAGE_FILENAME, C_EXPORT_IMAGE_WIDTH, C_EXPORT_IMAGE_HEIGHT);
+    }
 
     free(collection);
-
+    
+    MPI_Finalize();
     return 0;
 }
 
-/*
  void gather_results(RESULT *result, int number_of_results, RESULT *collection)
  {
      int i;
@@ -97,4 +105,3 @@ int main(int argc, char **argv)
      
      MPI_Type_free(&mpi_type);
  }
- */
